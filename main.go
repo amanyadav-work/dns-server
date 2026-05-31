@@ -125,13 +125,23 @@ func handleDNSClient(requestBytes []byte, serverConn *net.UDPConn, clientAddr *n
 	var resBuffer = new(bytes.Buffer)
 	var resHeader models.DNSHeader
 
+	flags := queryHeader.Flags
+
+	// Set QR (this packet is a response)
+	flags |= 0x8000
+
+	// Set AA (authoritative answer) if appropriate
+	flags |= 0x0400
+
+	flags &^= 0x0080
+
 	resHeader = models.DNSHeader{
 		TransactionID:  queryHeader.TransactionID,
-		Flags:          queryHeader.Flags,
+		Flags:          flags,
 		NumQuestions:   queryHeader.NumQuestions,
-		NumAnswers:     uint16((len(answerResourceRecords))),
-		NumAuthorities: uint16((len(authorityResourceRecords))),
-		NumAdditionals: uint16((len(additionalResourceRecords))),
+		NumAnswers:     uint16(len(answerResourceRecords)),
+		NumAuthorities: uint16(len(authorityResourceRecords)),
+		NumAdditionals: uint16(len(additionalResourceRecords)),
 	}
 
 	err = Write(resBuffer, resHeader)
@@ -210,5 +220,15 @@ func main() {
 
 	log.Println("UDP server running on", PORT)
 	defer udpConn.Close()
+
+	for {
+		requestBytes := make([]byte, UDPMaxMessageSize)
+		n, clientAddr, err := udpConn.ReadFromUDP(requestBytes)
+		if err != nil {
+			log.Println("Failed to read from UDP: ", err.Error())
+			continue
+		}
+		go handleDNSClient(requestBytes[:n], udpConn, clientAddr)
+	}
 
 }
